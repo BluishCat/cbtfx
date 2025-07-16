@@ -44,6 +44,9 @@ Create Batch Text for xTranslator(CBTFX)
 		翻訳の際の上書き基準を指定する。
 		XML、SST翻訳の際に使用。
 	
+	・MCM翻訳Interfaceファイル保存パス
+		MCM保存用のinterfaceテキストファイルが入っているフォルダを指定。
+	
 	・メイン翻訳ソース
 		翻訳ソースにどれを使うか指定する。
 		XML、SST、APIの３つがある。
@@ -65,6 +68,10 @@ Create Batch Text for xTranslator(CBTFX)
 	・MCM翻訳バッチ用ファイル作成
 		必要項目に入力したうえで、このボタンを押すとプラグイン翻訳バッチ用テキストファイルが生成される。
 		完了時にポップアップで対象MOD件数と生成テキストファイル数が表示される。
+	
+	・MCM Interfaceファイル置き換え処理
+		必要項目に入力したうえでこのボタンを押すと、MCM用インターフェイステキストファイルの置換を行う。
+		
 
 	入力内容は全てプログラム終了時にiniファイルに保存、起動時に読み込みを行います。
 
@@ -79,9 +86,11 @@ Create Batch Text for xTranslator(CBTFX)
 
 
 更新履歴
+	ver0.92		2025/7/16
+		MCM用のinterfaceファイルを「interface/translations」フォルダ以下で検索し置換する機能を追加。
+		
 	ver0.91		2025/7/13
 		UIを日本語と英語で切り替えられるように対応。
 
 	ver0.90		2025/7/9
 		とりあえずの公開版
-  
