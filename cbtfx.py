@@ -4,8 +4,9 @@ import sys
 import configparser
 from pathlib import Path
 import json
+import shutil
 
-APP_VERSION = "0.91"
+APP_VERSION = "0.92"
 
 FORMAT = "utf-8"
 INIT_FILE = "config.ini"
@@ -75,6 +76,7 @@ def load_init():
     global skyrim_lang, source_lang, dest_lang
     global trans_target, trans_mode, bat_list_max_num
     global trans_source, api_trans, api_heuristic, language
+    global mcm_interface_folder  # 追加
 
     config = configparser.ConfigParser()
 
@@ -82,6 +84,7 @@ def load_init():
     default_xml_folder = os.getcwd() + "\\xml"
     default_sst_folder = os.getcwd() + "\\sst"
     default_txt_folder = os.getcwd() + "\\output"
+    default_mcm_interface_folder = os.getcwd() + "\\mcm_interface"  # 追加
     default_skyrim_lang = "japanese"
     default_source_lang = "english"
     default_dest_lang = "japanese"
@@ -101,6 +104,7 @@ def load_init():
             xml_folder = config.get('FOLDER_SETTING', 'XML_FOLDER', fallback=default_xml_folder)
             sst_folder = config.get('FOLDER_SETTING', 'SST_FOLDER', fallback=default_sst_folder)
             txt_folder = config.get('FOLDER_SETTING', 'TXT_FOLDER', fallback=default_txt_folder)
+            mcm_interface_folder = config.get('FOLDER_SETTING', 'MCM_INTERFACE_FOLDER', fallback=default_mcm_interface_folder)  # 追加
             skyrim_lang = config.get('TRANS_SETTING', 'SKYRIM_LANG', fallback=default_skyrim_lang)
             source_lang = config.get('TRANS_SETTING', 'SOURCE_LANG', fallback=default_source_lang)
             dest_lang = config.get('TRANS_SETTING', 'DEST_LANG', fallback=default_dest_lang)
@@ -116,6 +120,7 @@ def load_init():
             xml_folder = default_xml_folder
             sst_folder = default_sst_folder
             txt_folder = default_txt_folder
+            mcm_interface_folder = default_mcm_interface_folder  # 追加
             skyrim_lang = default_skyrim_lang
             source_lang = default_source_lang
             dest_lang = default_dest_lang
@@ -132,6 +137,7 @@ def load_init():
         xml_folder = default_xml_folder
         sst_folder = default_sst_folder
         txt_folder = default_txt_folder
+        mcm_interface_folder = default_mcm_interface_folder  # 追加
         skyrim_lang = default_skyrim_lang
         source_lang = default_source_lang
         dest_lang = default_dest_lang
@@ -153,6 +159,7 @@ def save_init(values):
     xml_folder = values['-xml_path-']
     sst_folder = values['-sst_path-']
     txt_folder = values['-txt_path-']
+    mcm_interface_folder = values['-mcm_interface_path-']  # 追加
     skyrim_lang = values['-skyrim_lang-']
     source_lang = values['-s_lang-']
     dest_lang = values['-d_lang-']
@@ -178,7 +185,8 @@ def save_init(values):
         'MOD_FOLDER': mod_folder,
         'XML_FOLDER': xml_folder,
         'SST_FOLDER': sst_folder,
-        'TXT_FOLDER': txt_folder
+        'TXT_FOLDER': txt_folder,
+        'MCM_INTERFACE_FOLDER': mcm_interface_folder  # 追加
     }
 
     config['TRANS_SETTING'] = {
@@ -363,6 +371,57 @@ def create_mcm_trans_file(values):
     data_num = len(data_str_list)
     eg.popup(translations.get("batch_file_created", "バッチ用ファイル作成完了({data_num}件のデータ、{file_num}ファイル)").format(data_num=data_num, file_num=file_num))
 
+def replace_mcm_interface_file(values):
+    """MCMインターフェースファイル置換"""
+
+    # 翻訳元ファイルは -mcm_interface_path- の interface/translations 以下で「_[skyrim_lang].txt」をすべて対象に
+    src_dir = values['-mcm_interface_path-']
+    dst_dir = values['-mod_path-']  # 置換先は-mod_path-のinterface/translations以下
+    skyrim_lang = values['-skyrim_lang-'].lower()
+
+    # interface/translations フォルダをサブフォルダも含めて検索し、_[skyrim_lang].txtで終わるファイルをすべて取得
+    def find_src_files(base_dir, lang_suffix):
+        result = []
+        for root, _, files in os.walk(base_dir):
+            norm_root = root.replace("\\", "/").lower()
+            if "interface/translations" in norm_root:
+                for file in files:
+                    if file.lower().endswith(f"_{lang_suffix}.txt"):
+                        result.append(os.path.join(root, file))
+        return result
+
+    # 置換先も同じファイル名をinterface/translations以下から探す
+    def find_dst_file(base_dir, filename):
+        for root, _, files in os.walk(base_dir):
+            norm_root = root.replace("\\", "/").lower()
+            if "interface/translations" in norm_root:
+                for file in files:
+                    if file.lower() == filename:
+                        return os.path.join(root, file)
+        return None
+
+    # 置換元ファイルリスト
+    src_files = find_src_files(src_dir, skyrim_lang)
+    if not src_files:
+        eg.popup("置換元ファイルが見つかりません。")
+        return
+
+    replaced_count = 0
+    for src in src_files:
+        filename = os.path.basename(src).lower()
+        dst = find_dst_file(dst_dir, filename)
+        if dst:
+            try:
+                shutil.copy2(src, dst)
+                replaced_count += 1
+            except Exception as e:
+                eg.popup(f"{filename} の置換に失敗: {e}")
+
+    if replaced_count == 0:
+        eg.popup("置換先フォルダに同名ファイルがありません。")
+    else:
+        eg.popup(f"置換完了: {replaced_count}件のファイルを置換しました。")
+
 def create_trans_xml_batch_text_data(values, mod_file_list, xml_file_list):
     """バッチ翻訳用テキストデータ作成"""
     data_str_list = []
@@ -506,6 +565,10 @@ def main():
         [eg.Text("　　"), 
          eg.Checkbox(translations.get("heuristic_label", "ヒューリスティックな文字列除外"), key="chk_api_heuristic")],
         [eg.Text("　")],
+        [eg.Text("　")],
+        [eg.Text(translations.get("mcm_interface_path_label", "MCM翻訳Interfaceファイル保存パス：")),
+         eg.InputText("", size=(130, 1), key="-mcm_interface_path-"), eg.FolderBrowse()], 
+        [eg.Text("　")],
         [eg.Text(translations.get("batch_max_items_label", "翻訳バッチ１ファイル内最大件数：")), 
          eg.InputText("100", size=(15, 1), key="-bat_list_max_num-")],
         [eg.Text("　")],
@@ -514,7 +577,9 @@ def main():
             eg.Text("　　"),
             eg.Button(translations.get("create_pex_button", "PapyrusPex翻訳バッチ用ファイル作成"), key="-create_t_pex-"), 
             eg.Text("　　"),
-            eg.Button(translations.get("create_mcm_button", "MCM翻訳バッチ用ファイル作成"), key="-create_t_mcm-")
+            eg.Button(translations.get("create_mcm_button", "MCM翻訳バッチ用ファイル作成"), key="-create_t_mcm-"),
+            eg.Text("　　"),
+            eg.Button(translations.get("create_mcm_if_rep_button", "MCM Interfaceファイル置き換え処理"), key="-create_rep_mcm-")
         ]
     ]
 
@@ -528,6 +593,7 @@ def main():
     window["-xml_path-"].update(xml_folder)
     window["-sst_path-"].update(sst_folder)
     window["-txt_path-"].update(txt_folder)
+    window["-mcm_interface_path-"].update(mcm_interface_folder)  # 追加
     window["-skyrim_lang-"].update(skyrim_lang)
     window["-s_lang-"].update(source_lang)
     window["-d_lang-"].update(dest_lang)
@@ -570,10 +636,17 @@ def main():
             if check_input(window, values) == False:
                 continue
             create_mcm_trans_file(values)
+        
+        elif event == "-create_rep_mcm-":
+            if eg.popup_yes_no(translations.get("mcm_if_rep_confirm", "MCM Interfaceファイル置き換え処理を実行しますか？")) != "Yes":
+                continue
+
+            if check_input(window, values) == False:
+                continue
+            replace_mcm_interface_file(values)
 
     window.close()
 
 if __name__ == '__main__' and sys.executable:
     load_init()
     main()
-    
