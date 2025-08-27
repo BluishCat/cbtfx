@@ -86,6 +86,12 @@ Create Batch Text for xTranslator(CBTFX)
 
 
 更新履歴
+	ver0.93		2025/8/28
+		MCM用のinterfaceファイルを置換する処理を行う際、処理中ダイアログが出るように変更。
+	
+	ver0.92		2025/7/16
+		MCM用のinterfaceファイルを「interface/translations」フォルダ以下で検索し置換する機能を追加。
+  
 	ver0.92		2025/7/16
 		MCM用のinterfaceファイルを「interface/translations」フォルダ以下で検索し置換する機能を追加。
 		
