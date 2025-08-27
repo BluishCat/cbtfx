@@ -46,5 +46,11 @@
     "save_config_success": "設定を{init_file}に保存しました。",
     "save_config_failed": "設定ファイルの保存に失敗しました: {error}",
     "load_config_failed": "設定ファイルの読み込みに失敗しました: {error}",
-    "language_label": "言語："
+    "language_label": "言語：",
+    "error_mcm_src_not_found": "置換元ファイルが見つかりません。",
+    "error_mcm_dst_not_found": "置換先フォルダに同名ファイルがありません。",
+    "error_mcm_replace_failed": "{filename} の置換に失敗: {error}",
+    "mcm_replace_success": "置換完了: {count}件のファイルを置換しました。",
+    "progress_title": "処理中",
+    "mcm_replace_progress": "MCM Interfaceファイル置換中です。しばらくお待ちください..."
 }

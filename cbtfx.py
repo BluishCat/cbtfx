@@ -5,8 +5,10 @@ import configparser
 from pathlib import Path
 import json
 import shutil
+import threading
+import queue
 
-APP_VERSION = "0.92"
+APP_VERSION = "0.93"
 
 FORMAT = "utf-8"
 INIT_FILE = "config.ini"
@@ -422,6 +424,91 @@ def replace_mcm_interface_file(values):
     else:
         eg.popup(f"置換完了: {replaced_count}件のファイルを置換しました。")
 
+def replace_mcm_interface_file_with_progress(values, window=None):
+    """MCMインターフェースファイル置換（別スレッドで実行し、処理中ダイアログを表示、多言語対応）"""
+    progress_window = None
+    result_queue = queue.Queue()
+
+    def task():
+        src_dir = values['-mcm_interface_path-']
+        dst_dir = values['-mod_path-']
+        skyrim_lang = values['-skyrim_lang-'].lower()
+
+        def find_src_files(base_dir, lang_suffix):
+            result = []
+            for root, _, files in os.walk(base_dir):
+                norm_root = root.replace("\\", "/").lower()
+                if "interface/translations" in norm_root:
+                    for file in files:
+                        if file.lower().endswith(f"_{lang_suffix}.txt"):
+                            result.append(os.path.join(root, file))
+            return result
+
+        def find_dst_file(base_dir, filename):
+            for root, _, files in os.walk(base_dir):
+                norm_root = root.replace("\\", "/").lower()
+                if "interface/translations" in norm_root:
+                    for file in files:
+                        if file.lower() == filename:
+                            return os.path.join(root, file)
+            return None
+
+        src_files = find_src_files(src_dir, skyrim_lang)
+        if not src_files:
+            result_queue.put(("error", translations.get("error_mcm_src_not_found", "置換元ファイルが見つかりません。")))
+            return
+
+        replaced_count = 0
+        errors = []
+        for src in src_files:
+            filename = os.path.basename(src).lower()
+            dst = find_dst_file(dst_dir, filename)
+            if dst:
+                try:
+                    shutil.copy2(src, dst)
+                    replaced_count += 1
+                except Exception as e:
+                    errors.append(translations.get("error_mcm_replace_failed", "{filename} の置換に失敗: {error}").format(filename=filename, error=str(e)))
+
+        if replaced_count == 0:
+            result_queue.put(("error", translations.get("error_mcm_dst_not_found", "置換先フォルダに同名ファイルがありません。")))
+        else:
+            result_queue.put(("success", translations.get("mcm_replace_success", "置換完了: {count}件のファイルを置換しました。").format(count=replaced_count)))
+        for err in errors:
+            result_queue.put(("error", err))
+
+    # ダイアログ表示（多言語対応）
+    progress_window = eg.Window(
+        translations.get("progress_title", "処理中"),
+        [[eg.Text(translations.get("mcm_replace_progress", "MCM Interfaceファイル置換中です。しばらくお待ちください..."))]],
+        modal=True, finalize=True
+    )
+    thread = threading.Thread(target=task, daemon=True)
+    thread.start()
+    # スレッド終了まで待機しつつ、結果をメインスレッドでポップアップ
+    while True:
+        event, _ = progress_window.read(timeout=100)
+        try:
+            msg_type, msg = result_queue.get_nowait()
+            progress_window.close()
+            eg.popup(msg)
+            break
+        except queue.Empty:
+            pass
+        if not thread.is_alive():
+            # スレッド終了後もキューに何か残っていれば表示
+            try:
+                while True:
+                    msg_type, msg = result_queue.get_nowait()
+                    progress_window.close()
+                    eg.popup(msg)
+            except queue.Empty:
+                pass
+            break
+        if event == eg.WINDOW_CLOSED:
+            break
+    progress_window.close()
+
 def create_trans_xml_batch_text_data(values, mod_file_list, xml_file_list):
     """バッチ翻訳用テキストデータ作成"""
     data_str_list = []
@@ -643,7 +730,7 @@ def main():
 
             if check_input(window, values) == False:
                 continue
-            replace_mcm_interface_file(values)
+            replace_mcm_interface_file_with_progress(values)
 
     window.close()
 
