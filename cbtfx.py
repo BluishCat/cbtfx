@@ -7,12 +7,24 @@ import json
 import shutil
 import threading
 import queue
+import tkinter as tk
+from tkinter import filedialog
 
-APP_VERSION = "0.93"
+APP_VERSION = "1.00"
 
 FORMAT = "utf-8"
 INIT_FILE = "config.ini"
 LANG_DIR = "lang"
+# プロファイル管理
+PROFILE_DIR = "profiles"
+
+os.makedirs(PROFILE_DIR, exist_ok=True)
+
+def get_profile_list():
+    return [f.replace("config_","").replace(".ini","") for f in os.listdir(PROFILE_DIR) if f.startswith("config_") and f.endswith(".ini")]
+
+def get_profile_config_path(profile_name):
+    return os.path.join(PROFILE_DIR, f"config_{profile_name}.ini")
 
 # 設定項目
 mod_folder = ""
@@ -30,6 +42,37 @@ api_trans = ""
 api_heuristic = ""
 language = "ja"  # デフォルト言語
 translations = {}
+
+# パス履歴を保存するグローバル変数
+mod_path_history = []
+xml_path_history = []
+sst_path_history = []
+txt_path_history = []
+mcm_interface_path_history = []
+
+# 言語履歴を保存するグローバル変数
+skyrim_lang_history = []
+source_lang_history = []
+dest_lang_history = []
+
+# プロファイルの初期値
+current_profile = "default"
+
+LAST_PROFILE_FILE = os.path.join(PROFILE_DIR, "last_profile.txt")
+
+def save_last_profile(profile_name):
+    try:
+        with open(LAST_PROFILE_FILE, "w", encoding="utf-8") as f:
+            f.write(profile_name)
+    except Exception:
+        pass
+
+def load_last_profile():
+    try:
+        with open(LAST_PROFILE_FILE, "r", encoding="utf-8") as f:
+            return f.read().strip()
+    except Exception:
+        return None
 
 def load_translations(lang):
     """指定された言語に基づいて JSON ファイルから翻訳を読み込む。"""
@@ -71,16 +114,18 @@ def list_files(directory, extensions, include_string=None, exclude_string=None):
     return matching_files
 
 def load_init():
-    """
-    設定ファイルを読み込み、画面に反映させる。
-    """
+    global current_profile
     global mod_folder, xml_folder, sst_folder, txt_folder
     global skyrim_lang, source_lang, dest_lang
     global trans_target, trans_mode, bat_list_max_num
     global trans_source, api_trans, api_heuristic, language
-    global mcm_interface_folder  # 追加
+    global mcm_interface_folder
+    global mod_path_history, xml_path_history, sst_path_history, txt_path_history, mcm_interface_path_history
+    global skyrim_lang_history, source_lang_history, dest_lang_history
+    global current_profile
 
     config = configparser.ConfigParser()
+    config_path = get_profile_config_path(current_profile)
 
     default_mod_folder = os.getcwd() + "\\mod"
     default_xml_folder = os.getcwd() + "\\xml"
@@ -96,17 +141,51 @@ def load_init():
     default_trans_source = "0"
     default_api_trans = "0"
     default_api_heuristic = "0"
+    
+    # 過去のパス履歴のデフォルト値（空のリスト）
+    default_mod_path_history = "[]"
+    default_xml_path_history = "[]"
+    default_sst_path_history = "[]"
+    default_txt_path_history = "[]"
+    default_mcm_interface_path_history = "[]"
+    default_skyrim_lang_history = "[]"
+    default_source_lang_history = "[]"
+    default_dest_lang_history = "[]"
     default_language = "ja"
 
     try:
-        if os.path.exists(INIT_FILE):
-            config.read(INIT_FILE, encoding=FORMAT)
+        if os.path.exists(config_path):
+            config.read(config_path, encoding=FORMAT)
 
             mod_folder = config.get('FOLDER_SETTING', 'MOD_FOLDER', fallback=default_mod_folder)
             xml_folder = config.get('FOLDER_SETTING', 'XML_FOLDER', fallback=default_xml_folder)
             sst_folder = config.get('FOLDER_SETTING', 'SST_FOLDER', fallback=default_sst_folder)
             txt_folder = config.get('FOLDER_SETTING', 'TXT_FOLDER', fallback=default_txt_folder)
-            mcm_interface_folder = config.get('FOLDER_SETTING', 'MCM_INTERFACE_FOLDER', fallback=default_mcm_interface_folder)  # 追加
+            mcm_interface_folder = config.get('FOLDER_SETTING', 'MCM_INTERFACE_FOLDER', fallback=default_mcm_interface_folder)
+
+            # パス履歴の読み込み
+            mod_path_history = json.loads(config.get('FOLDER_SETTING', 'MOD_PATH_HISTORY', fallback='[]'))
+            xml_path_history = json.loads(config.get('FOLDER_SETTING', 'XML_PATH_HISTORY', fallback='[]'))
+            sst_path_history = json.loads(config.get('FOLDER_SETTING', 'SST_PATH_HISTORY', fallback='[]'))
+            txt_path_history = json.loads(config.get('FOLDER_SETTING', 'TXT_PATH_HISTORY', fallback='[]'))
+            mcm_interface_path_history = json.loads(config.get('FOLDER_SETTING', 'MCM_INTERFACE_PATH_HISTORY', fallback='[]'))
+            
+            # 言語履歴の読み込み
+            skyrim_lang_history = json.loads(config.get('LANG_SETTING', 'SKYRIM_LANG_HISTORY', fallback='[]'))
+            source_lang_history = json.loads(config.get('LANG_SETTING', 'SOURCE_LANG_HISTORY', fallback='[]'))
+            dest_lang_history = json.loads(config.get('LANG_SETTING', 'DEST_LANG_HISTORY', fallback='[]'))
+
+            # 現在のパスを履歴に追加
+            mod_path_history = update_path_history(mod_folder, mod_path_history)
+            xml_path_history = update_path_history(xml_folder, xml_path_history)
+            sst_path_history = update_path_history(sst_folder, sst_path_history)
+            txt_path_history = update_path_history(txt_folder, txt_path_history)
+            mcm_interface_path_history = update_path_history(mcm_interface_folder, mcm_interface_path_history)
+            
+            # 現在の言語を履歴に追加
+            skyrim_lang_history = update_path_history(skyrim_lang, skyrim_lang_history)
+            source_lang_history = update_path_history(source_lang, source_lang_history)
+            dest_lang_history = update_path_history(dest_lang, dest_lang_history)
             skyrim_lang = config.get('TRANS_SETTING', 'SKYRIM_LANG', fallback=default_skyrim_lang)
             source_lang = config.get('TRANS_SETTING', 'SOURCE_LANG', fallback=default_source_lang)
             dest_lang = config.get('TRANS_SETTING', 'DEST_LANG', fallback=default_dest_lang)
@@ -122,7 +201,12 @@ def load_init():
             xml_folder = default_xml_folder
             sst_folder = default_sst_folder
             txt_folder = default_txt_folder
-            mcm_interface_folder = default_mcm_interface_folder  # 追加
+            mcm_interface_folder = default_mcm_interface_folder
+            mod_path_history = [mod_folder]
+            xml_path_history = [xml_folder]
+            sst_path_history = [sst_folder]
+            txt_path_history = [txt_folder]
+            mcm_interface_path_history = [mcm_interface_folder]
             skyrim_lang = default_skyrim_lang
             source_lang = default_source_lang
             dest_lang = default_dest_lang
@@ -139,7 +223,12 @@ def load_init():
         xml_folder = default_xml_folder
         sst_folder = default_sst_folder
         txt_folder = default_txt_folder
-        mcm_interface_folder = default_mcm_interface_folder  # 追加
+        mcm_interface_folder = default_mcm_interface_folder
+        mod_path_history = [mod_folder]
+        xml_path_history = [xml_folder]
+        sst_path_history = [sst_folder]
+        txt_path_history = [txt_folder]
+        mcm_interface_path_history = [mcm_interface_folder]
         skyrim_lang = default_skyrim_lang
         source_lang = default_source_lang
         dest_lang = default_dest_lang
@@ -153,23 +242,51 @@ def load_init():
 
     load_translations(language)
 
+def update_path_history(path, history_list, max_history=10):
+    """パス履歴を更新する"""
+    if path and path not in history_list:
+        history_list.insert(0, path)
+        if len(history_list) > max_history:
+            history_list.pop()
+    return history_list
+
 def save_init(values):
-    """
-    設定ファイルに設定を書き込む。
-    """
+    global mod_path_history, xml_path_history, sst_path_history, txt_path_history, mcm_interface_path_history
+    global skyrim_lang_history, source_lang_history, dest_lang_history
+    global current_profile
+    
     mod_folder = values['-mod_path-']
     xml_folder = values['-xml_path-']
     sst_folder = values['-sst_path-']
     txt_folder = values['-txt_path-']
-    mcm_interface_folder = values['-mcm_interface_path-']  # 追加
+    mcm_interface_folder = values['-mcm_interface_path-']
     skyrim_lang = values['-skyrim_lang-']
     source_lang = values['-s_lang-']
     dest_lang = values['-d_lang-']
-    trans_target = values['trans_target'].replace("trans_target_", "")
-    trans_mode = values['trans_mode'].replace("trans_mode_", "")
+
+    # パス履歴を更新
+    mod_path_history = update_path_history(mod_folder, mod_path_history)
+    xml_path_history = update_path_history(xml_folder, xml_path_history)
+    sst_path_history = update_path_history(sst_folder, sst_path_history)
+    txt_path_history = update_path_history(txt_folder, txt_path_history)
+    mcm_interface_path_history = update_path_history(mcm_interface_folder, mcm_interface_path_history)
+    
+    # 言語履歴を更新
+    skyrim_lang_history = update_path_history(skyrim_lang, skyrim_lang_history)
+    source_lang_history = update_path_history(source_lang, source_lang_history)
+    dest_lang_history = update_path_history(dest_lang, dest_lang_history)
+
+    # ラジオボタンの値を取得
+    # 選択されているキーから数字部分を抽出
+    trans_target = next(key.replace("trans_target_", "") for key in values.keys() 
+                       if key.startswith("trans_target_") and values[key] == True)
+    trans_mode = next(key.replace("trans_mode_", "") for key in values.keys() 
+                     if key.startswith("trans_mode_") and values[key] == True)
+    trans_source = next(key.replace("trans_source_", "") for key in values.keys() 
+                       if key.startswith("trans_source_") and values[key] == True)
+    api_trans = next(key.replace("api_trans_", "") for key in values.keys() 
+                    if key.startswith("api_trans_") and values[key] == True)
     bat_list_max_num = values['-bat_list_max_num-']
-    trans_source = values['trans_source'].replace("trans_source_", "")
-    api_trans = values['api_trans'].replace("api_trans_", "")
     language = values['-language-']
 
     if values['chk_api_heuristic']:
@@ -178,6 +295,7 @@ def save_init(values):
         api_heuristic = "0"
 
     config = configparser.ConfigParser()
+    config_path = get_profile_config_path(current_profile)
 
     config['GENERAL'] = {
         'LANGUAGE': language
@@ -188,7 +306,13 @@ def save_init(values):
         'XML_FOLDER': xml_folder,
         'SST_FOLDER': sst_folder,
         'TXT_FOLDER': txt_folder,
-        'MCM_INTERFACE_FOLDER': mcm_interface_folder  # 追加
+        'MCM_INTERFACE_FOLDER': mcm_interface_folder,
+        # パス履歴をJSON形式で保存
+        'MOD_PATH_HISTORY': json.dumps(mod_path_history),
+        'XML_PATH_HISTORY': json.dumps(xml_path_history),
+        'SST_PATH_HISTORY': json.dumps(sst_path_history),
+        'TXT_PATH_HISTORY': json.dumps(txt_path_history),
+        'MCM_INTERFACE_PATH_HISTORY': json.dumps(mcm_interface_path_history)
     }
 
     config['TRANS_SETTING'] = {
@@ -203,12 +327,18 @@ def save_init(values):
         'api_heuristic': api_heuristic
     }
 
+    config['LANG_SETTING'] = {
+        'SKYRIM_LANG_HISTORY': json.dumps(skyrim_lang_history),
+        'SOURCE_LANG_HISTORY': json.dumps(source_lang_history),
+        'DEST_LANG_HISTORY': json.dumps(dest_lang_history)
+    }
+
     try:
-        with open(INIT_FILE, 'w', encoding=FORMAT) as configfile:
+        with open(config_path, 'w', encoding=FORMAT) as configfile:
             config.write(configfile)
-        print(translations.get("save_config_success", "設定を{init_file}に保存しました。").format(init_file=INIT_FILE))
+        print(translations.get("save_config_success", f"設定を{config_path}に保存しました。"))
     except Exception as e:
-        print(translations.get("save_config_failed", "設定ファイルの保存に失敗しました: {error}").format(error=str(e)))
+        print(translations.get("save_config_failed", f"設定ファイルの保存に失敗しました: {str(e)}"))
 
 def normalize_filename(filename, remove_strings=None):
     """ファイル名を正規化する（拡張子除去、大文字小文字無視、スペースとアンダースコアを統一、特定文字列削除）"""
@@ -333,7 +463,7 @@ def create_esp_trans_file(values):
         file_name += "_api"
     file_num = split_list_to_files(data_str_list, values['-txt_path-'], int(values['-bat_list_max_num-']), file_name)
     data_num = len(data_str_list)
-    eg.popup(translations.get("batch_file_created", "バッチ用ファイル作成完了({data_num}件のデータ、{file_num}ファイル)").format(data_num=data_num, file_num=file_num))
+    return translations.get("batch_file_created", "バッチ用ファイル作成完了({data_num}件のデータ、{file_num}ファイル)").format(data_num=data_num, file_num=file_num)
 
 def create_pex_trans_file(values):
     """PapyrusPex翻訳バッチ用ファイル作成"""
@@ -351,7 +481,7 @@ def create_pex_trans_file(values):
         file_name += "_api"
     file_num = split_list_to_files(data_str_list, values['-txt_path-'], int(values['-bat_list_max_num-']), file_name)
     data_num = len(data_str_list)
-    eg.popup(translations.get("batch_file_created", "バッチ用ファイル作成完了({data_num}件のデータ、{file_num}ファイル)").format(data_num=data_num, file_num=file_num))
+    return translations.get("batch_file_created", "バッチ用ファイル作成完了({data_num}件のデータ、{file_num}ファイル)").format(data_num=data_num, file_num=file_num)
 
 def create_mcm_trans_file(values):
     """MCM翻訳バッチ用ファイル作成"""
@@ -371,7 +501,7 @@ def create_mcm_trans_file(values):
         file_name += "_api"
     file_num = split_list_to_files(data_str_list, values['-txt_path-'], int(values['-bat_list_max_num-']), file_name)
     data_num = len(data_str_list)
-    eg.popup(translations.get("batch_file_created", "バッチ用ファイル作成完了({data_num}件のデータ、{file_num}ファイル)").format(data_num=data_num, file_num=file_num))
+    return translations.get("batch_file_created", "バッチ用ファイル作成完了({data_num}件のデータ、{file_num}ファイル)").format(data_num=data_num, file_num=file_num)
 
 def replace_mcm_interface_file(values):
     """MCMインターフェースファイル置換"""
@@ -509,6 +639,35 @@ def replace_mcm_interface_file_with_progress(values, window=None):
             break
     progress_window.close()
 
+def show_progress_with_worker(worker_func, args, msg="バッチファイル作成中です。しばらくお待ちください..."):
+    result_queue = queue.Queue()
+    def task():
+        try:
+            result = worker_func(*args)
+            result_queue.put(("success", result))
+        except Exception as e:
+            result_queue.put(("error", str(e)))
+    progress_window = eg.Window("処理中", [[eg.Text(msg)]], modal=True, finalize=True)
+    thread = threading.Thread(target=task, daemon=True)
+    thread.start()
+    while True:
+        event, _ = progress_window.read(timeout=100)
+        try:
+            msg_type, msg = result_queue.get_nowait()
+            progress_window.close()
+            if msg_type == "success":
+                eg.popup(str(msg))
+            else:
+                eg.popup("エラー: " + str(msg))
+            break
+        except queue.Empty:
+            pass
+        if not thread.is_alive():
+            break
+        if event == eg.WINDOW_CLOSED:
+            break
+    progress_window.close()
+
 def create_trans_xml_batch_text_data(values, mod_file_list, xml_file_list):
     """バッチ翻訳用テキストデータ作成"""
     data_str_list = []
@@ -586,6 +745,12 @@ def main():
     global skyrim_lang, source_lang, dest_lang
     global trans_target, trans_mode, bat_list_max_num
     global trans_source, api_trans, api_heuristic, language
+    global current_profile
+    global translations
+    load_translations(language)
+
+    # 前回選択プロファイルを初期化
+    current_profile = load_last_profile() or "default"
 
     # 利用可能な言語リスト（lang ディレクトリから取得）
     available_languages = []
@@ -596,51 +761,61 @@ def main():
     else:
         available_languages = ["ja", "en"]  # デフォルト言語
 
+    profile_list = get_profile_list()
+    if current_profile not in profile_list:
+        current_profile = profile_list[0] if profile_list else "default"
+
+    # プロファイル決定後、必ず設定内容をロード
+    load_init()
+
     layout = [
-        [eg.Text(translations.get("language_label", "言語：")), 
+        [eg.Text("プロファイル:"),
+         eg.Combo(profile_list + ["新規作成..."], default_value=current_profile, size=(20, 1), key="-profile-", enable_events=True),
+         eg.Text("　　"),
+         eg.Text(translations.get("language_label", "言語：")),
          eg.Combo(available_languages, default_value=language, size=(20, 1), key="-language-", enable_events=True)],
         [eg.Text("　")],
-        [eg.Text(translations.get("mod_path_label", "modファイル保存パス：")), 
-         eg.InputText("", size=(130, 1), key="-mod_path-"), eg.FolderBrowse()],
-        [eg.Text(translations.get("txt_path_label", "翻訳バッチ用Txtファイル出力先パス：")), 
-         eg.InputText("", size=(130, 1), key="-txt_path-"), eg.FolderBrowse()],
+        [eg.Text(translations.get("mod_path_label", "modファイル保存パス：")),
+         eg.Combo(values=mod_path_history, default_value=mod_folder, size=(130, 1), key="-mod_path-"), eg.Button(translations.get("browse", "参照"), key="-mod_path_browse-")],
+        [eg.Text(translations.get("txt_path_label", "翻訳バッチ用Txtファイル出力先パス：")),
+         eg.Combo(values=txt_path_history, default_value=txt_folder, size=(130, 1), key="-txt_path-"), eg.Button(translations.get("browse", "参照"), key="-txt_path_browse-")],
         [eg.Text("　")],
-        [eg.Text(translations.get("skyrim_lang_label", "Skyrim言語：")), 
-         eg.InputText("", size=(30, 1), key="-skyrim_lang-")],
-        [eg.Text(translations.get("source_lang_label", "元言語：")), 
-         eg.InputText("", size=(30, 1), key="-s_lang-"), 
-         eg.Text("　　"), 
-         eg.Text(translations.get("dest_lang_label", "翻訳先言語：")), 
-         eg.InputText("", size=(30, 1), key="-d_lang-")],
+        [eg.Text(translations.get("skyrim_lang_label", "Skyrim言語：")),
+         eg.Combo(values=skyrim_lang_history, default_value=skyrim_lang, size=(30, 1), key="-skyrim_lang-")],
+        [eg.Text(translations.get("source_lang_label", "元言語：")),
+         eg.Combo(values=source_lang_history, default_value=source_lang, size=(30, 1), key="-s_lang-"),
+         eg.Text("　　"),
+         eg.Text(translations.get("dest_lang_label", "翻訳先言語：")),
+         eg.Combo(values=dest_lang_history, default_value=dest_lang, size=(30, 1), key="-d_lang-")],
         [eg.Text("　")],
-        [eg.Text(translations.get("trans_target_label", "翻訳対象：")), 
-         eg.Radio(translations.get("trans_target_all", "すべて"), group_id="trans_target", key="trans_target_0", default=True, enable_events=True), 
-         eg.Text("　"), 
-         eg.Radio(translations.get("trans_target_untranslated", "未翻訳"), group_id="trans_target", key="trans_target_1", enable_events=True), 
-         eg.Text("　"), 
-         eg.Radio(translations.get("trans_target_unverified_to_in_progress", "未検証→進行中"), group_id="trans_target", key="trans_target_2", enable_events=True), 
-         eg.Text("　"), 
+        [eg.Text(translations.get("trans_target_label", "翻訳対象：")),
+         eg.Radio(translations.get("trans_target_all", "すべて"), group_id="trans_target", key="trans_target_0", default=True, enable_events=True),
+         eg.Text("　"),
+         eg.Radio(translations.get("trans_target_untranslated", "未翻訳"), group_id="trans_target", key="trans_target_1", enable_events=True),
+         eg.Text("　"),
+         eg.Radio(translations.get("trans_target_unverified_to_in_progress", "未検証→進行中"), group_id="trans_target", key="trans_target_2", enable_events=True),
+         eg.Text("　"),
          eg.Radio(translations.get("trans_target_in_progress", "進行中"), group_id="trans_target", key="trans_target_3", enable_events=True)],
-        [eg.Text(translations.get("trans_mode_label", "翻訳モード：")), 
-         eg.Radio(translations.get("trans_mode_formid", "フォームID"), group_id="trans_mode", key="trans_mode_0", default=True, enable_events=True), 
-         eg.Text("　"), 
-         eg.Radio(translations.get("trans_mode_strict", "StrictFormID+String"), group_id="trans_mode", key="trans_mode_1", enable_events=True), 
-         eg.Text("　"), 
-         eg.Radio(translations.get("trans_mode_relax", "relaxFormID+String"), group_id="trans_mode", key="trans_mode_2", enable_events=True), 
-         eg.Text("　"), 
+        [eg.Text(translations.get("trans_mode_label", "翻訳モード：")),
+         eg.Radio(translations.get("trans_mode_formid", "フォームID"), group_id="trans_mode", key="trans_mode_0", default=True, enable_events=True),
+         eg.Text("　"),
+         eg.Radio(translations.get("trans_mode_strict", "StrictFormID+String"), group_id="trans_mode", key="trans_mode_1", enable_events=True),
+         eg.Text("　"),
+         eg.Radio(translations.get("trans_mode_relax", "relaxFormID+String"), group_id="trans_mode", key="trans_mode_2", enable_events=True),
+         eg.Text("　"),
          eg.Radio(translations.get("trans_mode_string", "Stringのみ"), group_id="trans_mode", key="trans_mode_3", enable_events=True)],
         [eg.Text("　")],
         [eg.Text(translations.get("main_trans_source_label", "メイン翻訳ソース："))],
-        [eg.Text("　"), 
+        [eg.Text("　"),
          eg.Radio(translations.get("xml_label", "XML"), group_id="trans_source", key="trans_source_0", default=True, enable_events=True)],
-        [eg.Text("　　"), 
-         eg.Text(translations.get("xml_path_label", "インポート翻訳XMLファイル保存パス：")), 
-         eg.InputText("", size=(130, 1), key="-xml_path-"), eg.FolderBrowse()],
-        [eg.Text("　"), 
+        [eg.Text("　　"),
+         eg.Text(translations.get("xml_path_label", "インポート翻訳XMLファイル保存パス：")),
+         eg.Combo(values=xml_path_history, default_value=xml_folder, size=(130, 1), key="-xml_path-"), eg.Button(translations.get("browse", "参照"), key="-xml_path_browse-")],
+        [eg.Text("　"),
          eg.Radio(translations.get("sst_label", "SST"), group_id="trans_source", key="trans_source_1", enable_events=True)],
-        [eg.Text("　　"), 
-         eg.Text(translations.get("sst_path_label", "インポート翻訳SSTファイル保存パス：")), 
-         eg.InputText("", size=(130, 1), key="-sst_path-"), eg.FolderBrowse()],
+    [eg.Text("　　"), 
+     eg.Text(translations.get("sst_path_label", "インポート翻訳SSTファイル保存パス：")), 
+     eg.Combo(values=sst_path_history, default_value=sst_folder, size=(130, 1), key="-sst_path-"), eg.Button(translations.get("browse", "参照"), key="-sst_path_browse-")],
         [eg.Text("　"), 
          eg.Radio(translations.get("api_label", "API"), group_id="trans_source", key="trans_source_2", enable_events=True)],
         [eg.Text("　　"), 
@@ -653,8 +828,8 @@ def main():
          eg.Checkbox(translations.get("heuristic_label", "ヒューリスティックな文字列除外"), key="chk_api_heuristic")],
         [eg.Text("　")],
         [eg.Text("　")],
-        [eg.Text(translations.get("mcm_interface_path_label", "MCM翻訳Interfaceファイル保存パス：")),
-         eg.InputText("", size=(130, 1), key="-mcm_interface_path-"), eg.FolderBrowse()], 
+    [eg.Text(translations.get("mcm_interface_path_label", "MCM翻訳Interfaceファイル保存パス：")),
+     eg.Combo(values=mcm_interface_path_history, default_value=mcm_interface_folder, size=(130, 1), key="-mcm_interface_path-"), eg.Button(translations.get("browse", "参照"), key="-mcm_interface_path_browse-")], 
         [eg.Text("　")],
         [eg.Text(translations.get("batch_max_items_label", "翻訳バッチ１ファイル内最大件数：")), 
          eg.InputText("100", size=(15, 1), key="-bat_list_max_num-")],
@@ -675,6 +850,10 @@ def main():
         translations.get("version", "ver.") + APP_VERSION, 
         layout, finalize=True, resizable=True
     )
+
+    # tkinter root for filedialog; keep hidden
+    _tk_root = tk.Tk()
+    _tk_root.withdraw()
 
     window["-mod_path-"].update(mod_folder)
     window["-xml_path-"].update(xml_folder)
@@ -700,30 +879,79 @@ def main():
 
         if event == eg.WINDOW_CLOSED:
             save_init(values)
+            save_last_profile(current_profile)
             break
 
-        elif event == "-language-":
-            language = values["-language-"]
-            load_translations(language)
-            window.close()
-            main()
-            break
+        elif event == "-profile-":
+            selected_profile = values["-profile-"]
+            if selected_profile == "新規作成...":
+                new_profile = eg.popup_get_text("新しいプロファイル名を入力してください")
+                if new_profile:
+                    current_profile = new_profile
+                    save_init(values)
+                    save_last_profile(current_profile)
+                    load_init()
+                    window.close()
+                    main()
+                    break
+            else:
+                current_profile = selected_profile
+                save_last_profile(current_profile)
+                load_init()
+                window.close()
+                main()
+                break
+        # Browse button handlers: use current input text as initialdir if valid, otherwise cwd
+        elif event == "-mod_path_browse-":
+            current_path = values["-mod_path-"]
+            init_dir = current_path if os.path.isdir(current_path) else os.path.dirname(current_path) if os.path.exists(current_path) else os.getcwd()
+            selected = filedialog.askdirectory(parent=_tk_root, initialdir=init_dir, title=translations.get("mod_path_label", "Mod File Path:"))
+            if selected:
+                window["-mod_path-"].update(selected)
+
+        elif event == "-txt_path_browse-":
+            current_path = values["-txt_path-"]
+            init_dir = current_path if os.path.isdir(current_path) else os.path.dirname(current_path) if os.path.exists(current_path) else os.getcwd()
+            selected = filedialog.askdirectory(parent=_tk_root, initialdir=init_dir, title=translations.get("txt_path_label", "Translation Batch Text File Output Path:"))
+            if selected:
+                window["-txt_path-"].update(selected)
+
+        elif event == "-xml_path_browse-":
+            current_path = values["-xml_path-"]
+            init_dir = current_path if os.path.isdir(current_path) else os.path.dirname(current_path) if os.path.exists(current_path) else os.getcwd()
+            selected = filedialog.askdirectory(parent=_tk_root, initialdir=init_dir, title=translations.get("xml_path_label", "Import Translation XML File Path:"))
+            if selected:
+                window["-xml_path-"].update(selected)
+
+        elif event == "-sst_path_browse-":
+            current_path = values["-sst_path-"]
+            init_dir = current_path if os.path.isdir(current_path) else os.path.dirname(current_path) if os.path.exists(current_path) else os.getcwd()
+            selected = filedialog.askdirectory(parent=_tk_root, initialdir=init_dir, title=translations.get("sst_path_label", "Import Translation SST File Path:"))
+            if selected:
+                window["-sst_path-"].update(selected)
+
+        elif event == "-mcm_interface_path_browse-":
+            current_path = values["-mcm_interface_path-"]
+            init_dir = current_path if os.path.isdir(current_path) else os.path.dirname(current_path) if os.path.exists(current_path) else os.getcwd()
+            selected = filedialog.askdirectory(parent=_tk_root, initialdir=init_dir, title=translations.get("mcm_interface_path_label", "MCM translation interface file save path："))
+            if selected:
+                window["-mcm_interface_path-"].update(selected)
 
         elif event == "-create_t_esp-":
             if check_input(window, values) == False:
                 continue
-            create_esp_trans_file(values)
-        
+            show_progress_with_worker(create_esp_trans_file, (values,), "esp,esmバッチファイル作成中です。しばらくお待ちください...")
+
         elif event == "-create_t_pex-":
             if check_input(window, values) == False:
                 continue
-            create_pex_trans_file(values)
-        
+            show_progress_with_worker(create_pex_trans_file, (values,), "PapyrusPexバッチファイル作成中です。しばらくお待ちください...")
+
         elif event == "-create_t_mcm-":
             if check_input(window, values) == False:
                 continue
-            create_mcm_trans_file(values)
-        
+            show_progress_with_worker(create_mcm_trans_file, (values,), "MCMバッチファイル作成中です。しばらくお待ちください...")
+
         elif event == "-create_rep_mcm-":
             if eg.popup_yes_no(translations.get("mcm_if_rep_confirm", "MCM Interfaceファイル置き換え処理を実行しますか？")) != "Yes":
                 continue
@@ -731,6 +959,13 @@ def main():
             if check_input(window, values) == False:
                 continue
             replace_mcm_interface_file_with_progress(values)
+        elif event == "-language-":
+            language = values["-language-"]
+            save_init(values)
+            load_translations(language)
+            window.close()
+            main()
+            break
 
     window.close()
 
